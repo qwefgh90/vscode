@@ -1,15 +1,16 @@
 {
+	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
-		"module": "amd",
-		"noImplicitAny": false,
 		"removeComments": false,
 		"preserveConstEnums": true,
-		"target": "ES5",
 		"sourceMap": false,
-		"experimentalDecorators": true
+		"outDir": "../out"
 	},
+	"include": [
+		"./typings",
+		"./vs"
+	],
 	"exclude": [
-		"vs/languages/typescript/common/lib/lib.es6.d.ts",
-		"vs/languages/typescript/common/lib/lib.d.ts"
+		"./typings/require-monaco.d.ts"
 	]
 }

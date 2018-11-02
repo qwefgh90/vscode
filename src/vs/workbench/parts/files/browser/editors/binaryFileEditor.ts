@@ -2,33 +2,69 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
-import nls = require('vs/nls');
-import {BaseBinaryResourceEditor} from 'vs/workbench/browser/parts/editor/binaryEditor';
-import {BINARY_FILE_EDITOR_ID} from 'vs/workbench/parts/files/common/files';
-import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
-import {IWorkbenchEditorService} from 'vs/workbench/services/editor/common/editorService';
+import * as nls from 'vs/nls';
+import { BaseBinaryResourceEditor } from 'vs/workbench/browser/parts/editor/binaryEditor';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { IThemeService } from 'vs/platform/theme/common/themeService';
+import { IWindowsService } from 'vs/platform/windows/common/windows';
+import { EditorInput, EditorOptions } from 'vs/workbench/common/editor';
+import { FileEditorInput } from 'vs/workbench/parts/files/common/editors/fileEditorInput';
+import { URI } from 'vs/base/common/uri';
+import { BINARY_FILE_EDITOR_ID } from 'vs/workbench/parts/files/common/files';
+import { IFileService } from 'vs/platform/files/common/files';
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { IStorageService } from 'vs/platform/storage/common/storage';
 
 /**
- * An implementation of editor for binary files like images or videos leveraging the FileEditorInput.
+ * An implementation of editor for binary files like images.
  */
 export class BinaryFileEditor extends BaseBinaryResourceEditor {
 
-	public static ID = BINARY_FILE_EDITOR_ID;
+	static readonly ID = BINARY_FILE_EDITOR_ID;
 
 	constructor(
 		@ITelemetryService telemetryService: ITelemetryService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService
+		@IThemeService themeService: IThemeService,
+		@IFileService fileService: IFileService,
+		@IWindowsService private windowsService: IWindowsService,
+		@IEditorService private editorService: IEditorService,
+		@IStorageService storageService: IStorageService
 	) {
-		super(BinaryFileEditor.ID, telemetryService, editorService);
+		super(
+			BinaryFileEditor.ID,
+			{
+				openInternal: (input, options) => this.openInternal(input, options),
+				openExternal: resource => this.openExternal(resource)
+			},
+			telemetryService,
+			themeService,
+			fileService,
+			storageService
+		);
 	}
 
-	public getTitle(): string {
-		return this.getInput() ? this.getInput().getName() : nls.localize('binaryFileEditor', "Binary File Viewer");
+	private openInternal(input: EditorInput, options: EditorOptions): Thenable<void> {
+		if (input instanceof FileEditorInput) {
+			input.setForceOpenAsText();
+
+			return this.editorService.openEditor(input, options, this.group).then(() => void 0);
+		}
+
+		return Promise.resolve();
 	}
 
-	public supportsSplitEditor(): boolean {
-		return true; // yes, we can!
+	private openExternal(resource: URI): void {
+		this.windowsService.openExternal(resource.toString()).then(didOpen => {
+			if (!didOpen) {
+				return this.windowsService.showItemInFolder(resource.fsPath);
+			}
+
+			return void 0;
+		});
+	}
+
+	getTitle(): string {
+		return this.input ? this.input.getName() : nls.localize('binaryFileEditor', "Binary File Viewer");
 	}
 }

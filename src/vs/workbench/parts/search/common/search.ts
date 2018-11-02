@@ -3,36 +3,34 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
+import { TPromise } from 'vs/base/common/winjs.base';
+import { onUnexpectedError } from 'vs/base/common/errors';
+import { IDisposable } from 'vs/base/common/lifecycle';
+import { ISearchConfiguration, ISearchConfigurationProperties } from 'vs/platform/search/common/search';
+import { SymbolKind, Location, ProviderResult } from 'vs/editor/common/modes';
+import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { URI } from 'vs/base/common/uri';
+import { toResource } from 'vs/workbench/common/editor';
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { CancellationToken } from 'vs/base/common/cancellation';
 
-import {TPromise} from 'vs/base/common/winjs.base';
-import {IDisposable} from 'vs/base/common/lifecycle';
-import LanguageFeatureRegistry from 'vs/editor/common/modes/languageFeatureRegistry';
-import {IRange} from 'vs/editor/common/editorCommon';
-import URI from 'vs/base/common/uri';
-
-/**
- * Interface used to navigate to types by value.
- */
-export interface ITypeBearing {
-	containerName: string;
+export interface IWorkspaceSymbol {
 	name: string;
-	parameters: string;
-	type: string;
-	range: IRange;
-	resourceUri: URI;
+	containerName?: string;
+	kind: SymbolKind;
+	location: Location;
 }
 
-export interface INavigateTypesSupport {
-	getNavigateToItems:(search: string)=>TPromise<ITypeBearing[]>;
+export interface IWorkspaceSymbolProvider {
+	provideWorkspaceSymbols(search: string, token: CancellationToken): ProviderResult<IWorkspaceSymbol[]>;
+	resolveWorkspaceSymbol?(item: IWorkspaceSymbol, token: CancellationToken): ProviderResult<IWorkspaceSymbol>;
 }
 
+export namespace WorkspaceSymbolProviderRegistry {
 
-export namespace NavigateTypesSupportRegistry {
+	const _supports: IWorkspaceSymbolProvider[] = [];
 
-	const _supports: INavigateTypesSupport[] = [];
-
-	export function register(support:INavigateTypesSupport):IDisposable {
+	export function register(support: IWorkspaceSymbolProvider): IDisposable {
 
 		if (support) {
 			_supports.push(support);
@@ -48,14 +46,51 @@ export namespace NavigateTypesSupportRegistry {
 					}
 				}
 			}
-		}
+		};
 	}
 
-	// export function has(): boolean {
-	// 	return _supports.length > 0;
-	// }
-
-	export function getAll(): INavigateTypesSupport[] {
+	export function all(): IWorkspaceSymbolProvider[] {
 		return _supports.slice(0);
 	}
+}
+
+export function getWorkspaceSymbols(query: string, token: CancellationToken = CancellationToken.None): TPromise<[IWorkspaceSymbolProvider, IWorkspaceSymbol[]][]> {
+
+	const result: [IWorkspaceSymbolProvider, IWorkspaceSymbol[]][] = [];
+
+	const promises = WorkspaceSymbolProviderRegistry.all().map(support => {
+		return Promise.resolve(support.provideWorkspaceSymbols(query, token)).then(value => {
+			if (Array.isArray(value)) {
+				result.push([support, value]);
+			}
+		}, onUnexpectedError);
+	});
+
+	return TPromise.join(promises).then(_ => result);
+}
+
+export interface IWorkbenchSearchConfigurationProperties extends ISearchConfigurationProperties {
+	quickOpen: {
+		includeSymbols: boolean;
+	};
+}
+
+export interface IWorkbenchSearchConfiguration extends ISearchConfiguration {
+	search: IWorkbenchSearchConfigurationProperties;
+}
+
+/**
+ * Helper to return all opened editors with resources not belonging to the currently opened workspace.
+ */
+export function getOutOfWorkspaceEditorResources(editorService: IEditorService, contextService: IWorkspaceContextService): URI[] {
+	const resources: URI[] = [];
+
+	editorService.editors.forEach(editor => {
+		const resource = toResource(editor, { supportSideBySide: true });
+		if (resource && !contextService.isInsideWorkspace(resource)) {
+			resources.push(resource);
+		}
+	});
+
+	return resources;
 }
